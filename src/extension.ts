@@ -1,5 +1,7 @@
-import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as vscode from 'vscode';
+
+import translateApi = require('@vitalets/google-translate-api');
 
 export function activate(context: vscode.ExtensionContext) {
 
@@ -42,33 +44,34 @@ export function activate(context: vscode.ExtensionContext) {
 
 				// Find which module the source value is from
 				let path = editor.document.fileName.split('\\');
-				if (path.length === 1){
+				if (path.length === 1) {
 					path = editor.document.fileName.split('/');
 				}
-				
-				
+
+
 				let indexOfModule = path.indexOf('libs');
 				if (indexOfModule === -1) {
 					indexOfModule = path.indexOf('modules');
 				}
+
 				const module = path[indexOfModule + 1];
 
 				// Find which files will have to be updated
-				const literalsFile = await vscode.workspace.findFiles(`**/${module}/**/literals.ts`, '**/node_modules/**')
-				const idiomFiles = await vscode.workspace.findFiles(`**/${module}/**/{en,es,pt}.json`, '**/node_modules/**')
+				const literalsFile = await vscode.workspace.findFiles(`**/${module}/**/literals.ts`, '**/node_modules/**');
+				const idiomFiles = await vscode.workspace.findFiles(`**/${module}/**/{en,es,pt}.json`, '**/node_modules/**');
 
 				if (literalsFile.length > 0) {
 					// If the i18n files were found, start updating the objects
-					vscode.workspace.openTextDocument(literalsFile[0]).then(content => {
+					vscode.workspace.openTextDocument(literalsFile[0]).then((content: vscode.TextDocument) => {
 						let contentText = content.getText();
-						const indexOfTarget = contentText.indexOf(targetObject + '!:')
+						const indexOfTarget = contentText.indexOf(targetObject + '!:');
 
 						if (indexOfTarget !== -1) {
 							const indexForInsertion = contentText.indexOf('}', indexOfTarget);
 							contentText = contentText.slice(0, indexForInsertion) + `  ${targetTerm}: any;\n  ` + contentText.slice(indexForInsertion);
 						} else {
 							const indexForInsertion = contentText.lastIndexOf('}');
-							contentText = contentText.slice(0, indexForInsertion) + `\n  ${targetObject}!: {\n  ${targetTerm}: any;\n  };\n` + contentText.slice(indexForInsertion);
+							contentText = contentText.slice(0, indexForInsertion) + `\n  ${targetObject}!: {\n    ${targetTerm}: any;\n  };\n` + contentText.slice(indexForInsertion);
 						}
 
 						// Couldn't convert a .ts file content string to a valid JSON and convert back to ensure object rules, check the affeceted literals.ts for inconsistencies
@@ -77,34 +80,43 @@ export function activate(context: vscode.ExtensionContext) {
 					});
 
 					// Updates the JSON of each idiom file with JSON conversion to object
-					idiomFiles.forEach(idiomFile => {
-						vscode.workspace.openTextDocument(idiomFile).then(content => {
+					idiomFiles.forEach((idiomFile: vscode.Uri) => {
+						vscode.workspace.openTextDocument(idiomFile).then(async (content: vscode.TextDocument) => {
 							const contentJSON = JSON.parse(content.getText());
 
-							if (contentJSON[targetObject]) {
-								Object.assign(contentJSON[targetObject], { [targetTerm]: termValue })
-							} else {
-								Object.assign(contentJSON, { [targetObject]: { [targetTerm]: termValue } })
+							if (idiomFile.path.includes('en.json')) {
+								translateApi.translate(termValue, { from: 'pt', to: 'en' }).then((response: { text: string }) => {
+									assignJson(contentJSON, targetObject, targetTerm, response.text, content.fileName);
+								});
 							}
 
-							const sorted = sortJSON(contentJSON)
+							if (idiomFile.path.includes('es.json')) {
+								translateApi.translate(termValue, { from: 'pt', to: 'es' }).then((response: { text: string }) => {
+									assignJson(contentJSON, targetObject, targetTerm, response.text, content.fileName);
+								});
+							}
 
-							fs.writeFileSync(content.fileName, JSON.stringify(sorted, null, 2));
+							if (idiomFile.path.includes('pt.json')) {
+								assignJson(contentJSON, targetObject, targetTerm, termValue, content.fileName);
+							}
+
 						});
 					});
 
 					// Replaces selected text with new term
-					editor.edit(editBuilder => {
-						const newValue = `this.i18n.${targetObject}.${targetTerm}`;
+					editor.edit((editBuilder: vscode.TextEditorEdit) => {
+						const newValue = `${editor.document.fileName.endsWith('.ts') ? 'this.' : ''}i18n.${targetObject}.${targetTerm}`;
 
 						if (selectedWithQuotes) {
 							editBuilder.replace(editor.selection, newValue);
 						} else {
 							// If it's possible that the selection did not include quotation marks, extend the selection by 1 character before and after
 							const range = new vscode.Range(editor.selection.start.translate(0, -1), editor.selection.end.translate(0, 1));
-							editBuilder.replace(range, newValue)
+							editBuilder.replace(range, newValue);
 						}
-					}).then();
+					}).then(() => {
+						vscode.window.showInformationMessage(`Successfully generated literals to "${originalSelection}" as i18n.${targetObject}.${targetTerm}`);
+					});
 				} else {
 					vscode.window.showErrorMessage('No i18n path was found for this module/lib');
 				}
@@ -112,10 +124,22 @@ export function activate(context: vscode.ExtensionContext) {
 				vscode.window.showErrorMessage('Please inform the new object and term properties (i.e., geral.dataHora)');
 			}
 		} else {
-			vscode.window.showErrorMessage('Literals for: "' + originalSelection + '" cannot be generated');
+			vscode.window.showErrorMessage(`Literals for: "${originalSelection}" cannot be generated`);
 		}
 	});
 	context.subscriptions.push(generate);
+}
+
+function assignJson(contentJSON: any, targetObject: string, targetTerm: string, termValue: string, fileName: string) {
+	if (contentJSON[targetObject]) {
+		Object.assign(contentJSON[targetObject], { [targetTerm]: termValue });
+	} else {
+		Object.assign(contentJSON, { [targetObject]: { [targetTerm]: termValue } });
+	}
+
+	const sorted = sortJSON(contentJSON);
+
+	fs.writeFileSync(fileName, JSON.stringify(sorted, null, 2));
 }
 
 export function deactivate() { }
@@ -126,14 +150,14 @@ function sortJSON(object: any) {
 			object[i] = sortJSON(object[i]);
 		}
 		return object;
-	} else if (typeof object != "object") return object;
+	} else if (typeof object !== "object") { return object; }
 
 	let keys = Object.keys(object);
 	keys = keys.sort();
 	const newObject = {};
 	for (var i = 0; i < keys.length; i++) {
 		const property = keys[i] as keyof Object;
-		newObject[property] = sortJSON(object[keys[i]])
+		newObject[property] = sortJSON(object[keys[i]]);
 	}
 	return newObject;
 }

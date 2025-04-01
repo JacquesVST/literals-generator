@@ -3,10 +3,10 @@
   "publisher": "JacquesVST",
   "displayName": "Literal Generator",
   "description": "Generates entries on the i18n class of a module",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "icon": "literal.png",
   "engines": {
-    "vscode": "^1.77.0"
+    "vscode": "^1.98.0"
   },
   "categories": [
     "Other"
@@ -38,20 +38,23 @@
     "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
-    "@types/glob": "^8.1.0",
-    "@types/mocha": "^10.0.1",
-    "@types/node": "16.x",
-    "@types/vscode": "^1.77.0",
-    "@typescript-eslint/eslint-plugin": "^5.56.0",
-    "@typescript-eslint/parser": "^5.56.0",
-    "@vscode/test-electron": "^2.3.0",
-    "eslint": "^8.36.0",
-    "glob": "^8.1.0",
-    "mocha": "^10.2.0",
-    "typescript": "^4.9.5"
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/node-fetch": "^2.6.12",
+    "@types/vscode": "^1.98.0",
+    "@typescript-eslint/eslint-plugin": "^8.29.0",
+    "@typescript-eslint/parser": "^8.29.0",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.23.0",
+    "glob": "^11.0.1",
+    "mocha": "^11.1.0",
+    "typescript": "^5.8.2"
   },
   "repository": {
     "type": "git",
     "url": "git://github.com/JacquesVST/literlas-generator.git"
+  },
+  "dependencies": {
+    "@vitalets/google-translate-api": "^9.2.1"
   }
 }
